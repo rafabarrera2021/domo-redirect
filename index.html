@@ -4,22 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Experimento DOMO</title>
-<script>
-function redirect() {
-  var params = new URLSearchParams(window.location.search);
-  var url = params.get('url');
-  if (url) {
-    window.location.href = decodeURIComponent(url);
-  } else {
-    document.getElementById('msg').innerText = 'Error: no se recibio URL de destino.';
-  }
-}
-</script>
 </head>
-<body onload="redirect()" style="font-family:Arial;text-align:center;padding:40px;background:#f0fafa;">
+<body style="font-family:Arial;text-align:center;padding:40px;background:#f0fafa;">
   <div style="max-width:400px;margin:auto;background:white;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
     <h2 style="color:#028090;">Experimento DOMO</h2>
-    <p id="msg" style="color:#444">Redirigiendo al formulario...</p>
+    <p style="color:#444;">Toca el botón para continuar al formulario.</p>
+    <div id="btnContainer"></div>
   </div>
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var url = params.get('url');
+    if (url) {
+      var btn = document.createElement('a');
+      btn.href = decodeURIComponent(url);
+      btn.innerText = 'Continuar ➜';
+      btn.style.cssText = 'display:block;background:#028090;color:white;padding:16px;border-radius:8px;text-decoration:none;font-size:20px;margin-top:20px;';
+      document.getElementById('btnContainer').appendChild(btn);
+    }
+  </script>
 </body>
 </html>
