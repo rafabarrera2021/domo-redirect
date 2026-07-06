@@ -8,106 +8,96 @@
     body { font-family: sans-serif; text-align: center; padding: 40px 20px; background: #f4f9f8; color: #333; }
     .card { background: white; max-width: 400px; margin: auto; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
     h2 { color: #028090; }
-    .btn { display: block; width: 100%; padding: 15px; margin: 10px 0; border: none; border-radius: 8px; font-weight: bold; color: white; cursor: pointer; font-size: 16px; }
-    .btn-reuso { background: #028090; }
-    .btn-reciclaje { background: #e63946; }
-    #loading, #acciones, #mensaje { display: none; }
+    #loading, #info, #mensaje { display: none; }
   </style>
 </head>
 <body>
 
   <div class="card">
     <h2>Sistema DOMO</h2>
-    
+
     <!-- Pantalla de Carga -->
     <div id="loading" style="display: block;">
       <p>Conectando con el sistema...</p>
       <p style="font-size: 24px;">⏳</p>
     </div>
 
-    <!-- Pantalla del Asistente (Botones) -->
-    <div id="acciones">
-      <p>Vaso detectado: <strong id="display-vaso"></strong></p>
-      <p>Grupo: <strong id="display-grupo"></strong></p>
-      <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-      <button class="btn btn-reuso" onclick="registrarAccion('reuso')">♻️ REGISTRAR REUSO</button>
-      <button class="btn btn-reciclaje" onclick="registrarAccion('reciclaje')">🗑️ REGISTRAR RECICLAJE</button>
+    <!-- Pantalla informativa (vaso ya registrado) -->
+    <!--
+      NOTA IMPORTANTE: esta pantalla reemplaza los antiguos botones de
+      "REGISTRAR REUSO" / "REGISTRAR RECICLAJE". Esa clasificación ahora
+      es responsabilidad exclusiva de asistente-clasificacion.html, que
+      envía rol=asistente y punto_evento al backend. Esta página
+      (domo-redirect) NUNCA debe volver a mostrar esos botones, porque
+      es la misma URL que abre cualquier participante que escanee el QR
+      del vaso con su propia cámara.
+    -->
+    <div id="info">
+      <p style="font-size: 40px; margin: 0;">🥤</p>
+      <p>Este vaso ya está registrado en el sistema.</p>
+      <p>Acércate al punto DOMO para continuar el proceso.</p>
     </div>
 
-    <!-- Pantalla de Éxito -->
+    <!-- Pantalla de mensaje / error -->
     <div id="mensaje">
-      <p style="font-size: 40px; margin: 0;">✅</p>
+      <p id="icono-mensaje" style="font-size: 40px; margin: 0;">✅</p>
       <p id="texto-mensaje" style="font-weight: bold; margin-top: 10px;"></p>
     </div>
   </div>
 
   <script>
-    // --- 1. PEGA TU URL DE GOOGLE SCRIPT AQUÍ ---
+    // --- 1. URL de Google Apps Script ---
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzfrowrbdUzcuwb54oTAGLEk-A_K7vIVV1xKPG-rsRYDX39N81hIJY0q4qF9VLsnrwUQg/exec";
 
-    // --- 2. CAPTURAR PARÁMETROS DE LA URL ---
+    // --- 2. Capturar parámetros de la URL (los que trae el QR del vaso) ---
     const urlParams = new URLSearchParams(window.location.search);
     const vasoId = urlParams.get('vaso_id');
     const punto = urlParams.get('punto') || "P1";
 
     const divLoading = document.getElementById('loading');
-    const divAcciones = document.getElementById('acciones');
+    const divInfo = document.getElementById('info');
     const divMensaje = document.getElementById('mensaje');
 
-    // --- 3. INICIAR COMUNICACIÓN CON LA BASE DE DATOS ---
+    // --- 3. Iniciar comunicación con el backend ---
     window.onload = function() {
       if (!vasoId) {
-        mostrarMensaje("Error: No se detectó un ID de vaso válido en el código QR.");
+        mostrarMensaje("Error: No se detectó un ID de vaso válido en el código QR.", "⚠️");
         return;
       }
 
-      // Enviar solicitud a Google Script
+      // Petición SIN rol=asistente: esta página es exclusivamente para el
+      // flujo del participante (Etapa 1 y ventana de gracia).
       fetch(`${SCRIPT_URL}?vaso_id=${vasoId}&punto=${punto}`)
         .then(response => response.json())
         .then(data => {
-          
+
           if (data.error) {
-            mostrarMensaje("Error del servidor: " + data.error);
-          } 
-          // Si el vaso es NUEVO, redirigir automáticamente al Formulario
+            mostrarMensaje("Error del servidor: " + data.error, "⚠️");
+          }
+          // Vaso nuevo (o participante reingresando dentro de la ventana de
+          // gracia de 5 min): redirigir automáticamente al formulario.
           else if (data.tipo === "nuevo") {
             divLoading.innerHTML = "<p>Redirigiendo a la encuesta...</p>";
             window.location.href = data.redirectUrl;
-          } 
-          // Si el vaso EXISTE, mostrar botones para el asistente
+          }
+          // Vaso existente fuera de la ventana de gracia: ya no se muestran
+          // botones de clasificación aquí. Solo un mensaje informativo.
           else if (data.tipo === "existente") {
             divLoading.style.display = 'none';
-            divAcciones.style.display = 'block';
-            document.getElementById('display-vaso').innerText = data.vasoId;
-            document.getElementById('display-grupo').innerText = data.grupo;
+            divInfo.style.display = 'block';
           }
         })
         .catch(error => {
-          mostrarMensaje("Error de conexión. Intenta nuevamente.");
+          mostrarMensaje("Error de conexión. Intenta nuevamente.", "⚠️");
           console.error(error);
         });
     };
 
-    // --- 4. FUNCIÓN PARA LOS BOTONES DE REUSO/RECICLAJE ---
-    function registrarAccion(accion) {
-      divAcciones.style.display = 'none';
-      divLoading.style.display = 'block';
-      divLoading.innerHTML = "<p>Guardando registro...</p>";
-
-      fetch(`${SCRIPT_URL}?vaso_id=${vasoId}&punto=${punto}&accion=${accion}`)
-        .then(response => response.json())
-        .then(data => {
-          if(data.success) {
-            mostrarMensaje(`Acción (${accion.toUpperCase()}) guardada correctamente en el sistema.`);
-          }
-        })
-        .catch(error => mostrarMensaje("Hubo un error al guardar."));
-    }
-
-    function mostrarMensaje(texto) {
+    function mostrarMensaje(texto, icono) {
       divLoading.style.display = 'none';
-      divAcciones.style.display = 'none';
+      divInfo.style.display = 'none';
       divMensaje.style.display = 'block';
+      document.getElementById('icono-mensaje').innerText = icono || "✅";
       document.getElementById('texto-mensaje').innerText = texto;
     }
   </script>
