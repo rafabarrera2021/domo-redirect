@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistente DOMO — Escaneo</title>
+<style>
+  :root {
+    --verde: #1b5e20;
+    --verde-claro: #2e7d32;
+    --gris: #f2f2f2;
+    --rojo: #b71c1c;
+    --texto: #1a1a1a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: var(--gris);
+    color: var(--texto);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    background: var(--verde);
+    color: white;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 {
+    font-size: 1rem;
+    margin: 0;
+    font-weight: 600;
+  }
+  #puntoActivo {
+    font-size: 0.85rem;
+    opacity: 0.9;
+  }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+    gap: 16px;
+  }
+  select, button {
+    font-size: 1rem;
+    padding: 12px 18px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+  }
+  select {
+    border: 2px solid var(--verde-claro);
+    background: white;
+    min-width: 200px;
+  }
+  button.primario {
+    background: var(--verde-claro);
+    color: white;
+    font-weight: 600;
+    min-width: 220px;
+  }
+  button.secundario {
+    background: white;
+    border: 2px solid #999;
+    color: #333;
+  }
+  button.reuso {
+    background: #1565c0;
+    color: white;
+    font-weight: 600;
+    min-width: 160px;
+  }
+  button.reciclaje {
+    background: var(--verde-claro);
+    color: white;
+    font-weight: 600;
+    min-width: 160px;
+  }
+  button.cerrarSesion {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255,255,255,0.6);
+    font-size: 0.8rem;
+    padding: 6px 10px;
+  }
+  #video {
+    width: 100%;
+    max-width: 360px;
+    border-radius: 12px;
+    background: black;
+  }
+  .mensaje {
+    padding: 16px;
+    border-radius: 10px;
+    max-width: 340px;
+    font-size: 0.95rem;
+  }
+  .mensaje.exito { background: #e8f5e9; border: 2px solid var(--verde-claro); }
+  .mensaje.error { background: #ffebee; border: 2px solid var(--rojo); color: var(--rojo); }
+  .mensaje.inconsistente { background: #fff3e0; border: 2px solid #ef6c00; color: #ef6c00; }
+  .botonesAccion { display: flex; gap: 12px; }
+  .oculto { display: none !important; }
+  #vasoIdMostrado { font-size: 1.3rem; font-weight: 700; margin: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Asistente DOMO</h1>
+  <div>
+    <span id="puntoActivo"></span>
+    <button class="cerrarSesion oculto" id="btnCerrarSesion">Cerrar sesión</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- PANTALLA 1: selección de punto -->
+  <section id="pantallaSeleccion">
+    <p>Selecciona el punto de venta que estás acompañando:</p>
+    <select id="selectPunto">
+      <option value="">-- Selecciona --</option>
+      <option value="P1">P1</option>
+      <option value="P2">P2</option>
+      <option value="P3">P3</option>
+      <option value="P4">P4</option>
+    </select>
+    <br>
+    <button class="primario" id="btnIniciar">Iniciar turno</button>
+  </section>
+
+  <!-- PANTALLA 2: escaneo -->
+  <section id="pantallaEscaneo" class="oculto">
+    <p>Apunta la cámara al código QR del vaso</p>
+    <video id="video" playsinline></video>
+    <canvas id="canvas" class="oculto"></canvas>
+  </section>
+
+  <!-- PANTALLA 3: clasificación -->
+  <section id="pantallaClasificacion" class="oculto">
+    <p id="vasoIdMostrado"></p>
+    <p>¿Qué decidió el usuario?</p>
+    <div class="botonesAccion">
+      <button class="reuso" id="btnReuso">Reuso</button>
+      <button class="reciclaje" id="btnReciclaje">Reciclaje</button>
+    </div>
+  </section>
+
+  <!-- PANTALLA 4: resultado -->
+  <section id="pantallaResultado" class="oculto">
+    <div class="mensaje" id="cajaMensaje"></div>
+    <button class="primario" id="btnEscanearOtro">Escanear otro</button>
+  </section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<script>
+  // ============================================================
+  // CONFIGURACIÓN — reemplazar con la URL real del Web App desplegado
+  // (Extensiones > Apps Script > Implementar > Nueva implementación > Web App)
+  // ============================================================
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzfrowrbdUzcuwb54oTAGLEk-A_K7vIVV1xKPG-rsRYDX39N81hIJY0q4qF9VLsnrwUQg/exec";
+
+  const KEY_SESION = "domo_punto_evento";
+
+  const pantallaSeleccion = document.getElementById("pantallaSeleccion");
+  const pantallaEscaneo = document.getElementById("pantallaEscaneo");
+  const pantallaClasificacion = document.getElementById("pantallaClasificacion");
+  const pantallaResultado = document.getElementById("pantallaResultado");
+  const puntoActivoSpan = document.getElementById("puntoActivo");
+  const btnCerrarSesion = document.getElementById("btnCerrarSesion");
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  let streamActual = null;
+  let escaneando = false;
+  let vasoActualId = null;
+
+  // ---------- Manejo de sesión (punto seleccionado) ----------
+
+  function obtenerPuntoSesion() {
+    return sessionStorage.getItem(KEY_SESION) || "";
+  }
+
+  function iniciarSesionConPunto(punto) {
+    sessionStorage.setItem(KEY_SESION, punto);
+    mostrarPantallaEscaneo();
+  }
+
+  function cerrarSesion() {
+    sessionStorage.removeItem(KEY_SESION);
+    detenerCamara();
+    mostrarPantallaSeleccion();
+  }
+
+  btnCerrarSesion.addEventListener("click", cerrarSesion);
+
+  document.getElementById("btnIniciar").addEventListener("click", () => {
+    const punto = document.getElementById("selectPunto").value;
+    if (!punto) {
+      alert("Debes seleccionar un punto antes de continuar.");
+      return;
+    }
+    iniciarSesionConPunto(punto);
+  });
+
+  // ---------- Cambios de pantalla ----------
+
+  function ocultarTodasLasPantallas() {
+    [pantallaSeleccion, pantallaEscaneo, pantallaClasificacion, pantallaResultado]
+      .forEach(p => p.classList.add("oculto"));
+  }
+
+  function mostrarPantallaSeleccion() {
+    ocultarTodasLasPantallas();
+    pantallaSeleccion.classList.remove("oculto");
+    puntoActivoSpan.textContent = "";
+    btnCerrarSesion.classList.add("oculto");
+  }
+
+  function mostrarPantallaEscaneo() {
+    ocultarTodasLasPantallas();
+    pantallaEscaneo.classList.remove("oculto");
+    puntoActivoSpan.textContent = "Punto: " + obtenerPuntoSesion();
+    btnCerrarSesion.classList.remove("oculto");
+    iniciarCamara();
+  }
+
+  function mostrarPantallaClasificacion(vasoId) {
+    detenerCamara();
+    ocultarTodasLasPantallas();
+    pantallaClasificacion.classList.remove("oculto");
+    document.getElementById("vasoIdMostrado").textContent = vasoId;
+  }
+
+  function mostrarPantallaResultado(tipo, texto) {
+    ocultarTodasLasPantallas();
+    pantallaResultado.classList.remove("oculto");
+    const caja = document.getElementById("cajaMensaje");
+    caja.className = "mensaje " + tipo;
+    caja.textContent = texto;
+  }
+
+  document.getElementById("btnEscanearOtro").addEventListener("click", () => {
+    vasoActualId = null;
+    mostrarPantallaEscaneo();
+  });
+
+  // ---------- Cámara y decodificación de QR ----------
+
+  async function iniciarCamara() {
+    try {
+      streamActual = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+      video.srcObject = streamActual;
+      await video.play();
+      escaneando = true;
+      requestAnimationFrame(cicloEscaneo);
+    } catch (err) {
+      mostrarPantallaResultado("error", "No se pudo acceder a la cámara: " + err.message +
+        ". Revisa los permisos de cámara en la configuración del navegador.");
+    }
+  }
+
+  function detenerCamara() {
+    escaneando = false;
+    if (streamActual) {
+      streamActual.getTracks().forEach(track => track.stop());
+      streamActual = null;
+    }
+  }
+
+  function cicloEscaneo() {
+    if (!escaneando) return;
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+      if (code && code.data) {
+        procesarQrDecodificado(code.data);
+        return; // se detiene el ciclo; se reactiva al pulsar "Escanear otro"
+      }
+    }
+    requestAnimationFrame(cicloEscaneo);
+  }
+
+  // ---------- Lógica de negocio ----------
+
+  function extraerVasoId(urlDecodificada) {
+    try {
+      const url = new URL(urlDecodificada);
+      return url.searchParams.get("vaso_id");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function procesarQrDecodificado(urlDecodificada) {
+    const vasoId = extraerVasoId(urlDecodificada);
+    if (!vasoId) {
+      mostrarPantallaResultado("error", "El código QR escaneado no contiene un vaso_id válido.");
+      return;
+    }
+
+    vasoActualId = vasoId;
+    const puntoEvento = obtenerPuntoSesion();
+
+    const params = new URLSearchParams({
+      vaso_id: vasoId,
+      rol: "asistente",
+      punto_evento: puntoEvento
+    });
+
+    try {
+      const resp = await fetch(`${APPS_SCRIPT_URL}?${params.toString()}`);
+      const data = await resp.json();
+
+      if (data.error) {
+        mostrarPantallaResultado("error", data.error);
+        return;
+      }
+
+      if (data.tipo === "existente") {
+        mostrarPantallaClasificacion(vasoId);
+      } else {
+        mostrarPantallaResultado("error", "Respuesta inesperada del servidor para este vaso.");
+      }
+    } catch (err) {
+      mostrarPantallaResultado("error", "Error de conexión con el servidor: " + err.message);
+    }
+  }
+
+  async function enviarClasificacion(accion) {
+    const puntoEvento = obtenerPuntoSesion();
+    const params = new URLSearchParams({
+      vaso_id: vasoActualId,
+      rol: "asistente",
+      punto_evento: puntoEvento,
+      accion: accion
+    });
+
+    try {
+      const resp = await fetch(`${APPS_SCRIPT_URL}?${params.toString()}`);
+      const data = await resp.json();
+
+      if (data.error) {
+        mostrarPantallaResultado("error", data.error);
+        return;
+      }
+      if (data.inconsistente) {
+        mostrarPantallaResultado("inconsistente", data.mensaje);
+        return;
+      }
+      mostrarPantallaResultado("exito", data.mensaje || "Acción registrada exitosamente.");
+    } catch (err) {
+      mostrarPantallaResultado("error", "Error de conexión con el servidor: " + err.message);
+    }
+  }
+
+  document.getElementById("btnReuso").addEventListener("click", () => {
+    if (confirm("¿Seguro que el usuario decidió REUSAR este vaso?")) {
+      enviarClasificacion("reuso");
+    }
+  });
+
+  document.getElementById("btnReciclaje").addEventListener("click", () => {
+    if (confirm("¿Seguro que el usuario decidió RECICLAR este vaso?")) {
+      enviarClasificacion("reciclaje");
+    }
+  });
+
+  // ---------- Arranque ----------
+
+  (function inicio() {
+    const puntoGuardado = obtenerPuntoSesion();
+    if (puntoGuardado) {
+      mostrarPantallaEscaneo();
+    } else {
+      mostrarPantallaSeleccion();
+    }
+  })();
+</script>
+
+</body>
+</html>
