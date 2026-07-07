@@ -260,6 +260,18 @@
   // ---------- Cámara y decodificación de QR ----------
 
   async function iniciarCamara() {
+    // Verificación explícita: si la librería jsQR no cargó (CDN bloqueado,
+    // red restringida, bloqueador de contenido, etc.), se avisa de inmediato
+    // en vez de encender la cámara para que quede viva sin decodificar nunca.
+    if (typeof jsQR === "undefined") {
+      mostrarPantallaResultado("error",
+        "No se pudo cargar el lector de códigos QR (librería jsQR). " +
+        "Esto suele deberse a que el navegador o la red están bloqueando " +
+        "cdnjs.cloudflare.com. Prueba con otra red (datos móviles en vez de wifi, " +
+        "o viceversa) o con otro navegador, y vuelve a intentar.");
+      return;
+    }
+
     try {
       streamActual = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" }
@@ -285,18 +297,30 @@
   function cicloEscaneo() {
     if (!escaneando) return;
 
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
+    try {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-      if (code && code.data) {
-        procesarQrDecodificado(code.data);
-        return; // se detiene el ciclo; se reactiva al pulsar "Escanear otro"
+        if (code && code.data) {
+          procesarQrDecodificado(code.data);
+          return; // se detiene el ciclo; se reactiva al pulsar "Escanear otro"
+        }
       }
+    } catch (err) {
+      // Cualquier error durante el ciclo (ej. jsQR falló a mitad de carga,
+      // el canvas no pudo leer el frame, etc.) se muestra explícitamente
+      // en vez de dejar el ciclo detenido en silencio.
+      escaneando = false;
+      mostrarPantallaResultado("error",
+        "Ocurrió un error durante el escaneo: " + err.message +
+        ". Pulsa 'Escanear otro' para reintentar.");
+      return;
     }
+
     requestAnimationFrame(cicloEscaneo);
   }
 
